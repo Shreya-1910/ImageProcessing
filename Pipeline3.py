@@ -14,10 +14,10 @@ lab_img = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
 l_channel, a_channel, b_channel = cv2.split(lab_img)
 
 # Apply Gaussian blur to the A channel
-blur_imgA = cv2.GaussianBlur(a_channel, (3, 3), 0)
+blur_imgA = cv2.GaussianBlur(a_channel, (5, 5), 10)
 
 #Otsu's thresholding
-_, otsu_thresh = cv2.threshold(blur_imgA, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+_, otsu_thresh = cv2.threshold(blur_imgA, 10, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
 # Morphological operations
 #Opening
@@ -28,18 +28,43 @@ opening = cv2.morphologyEx(otsu_thresh, cv2.MORPH_OPEN, kernel)
 closing = cv2.morphologyEx(opening, cv2.MORPH_CLOSE, kernel)#Connected components
 num_labels, labels = cv2.connectedComponents(closing)
 
-#Measuring size of components
-sizes = []
-for i in range(1, num_labels):
-    size = np.sum(labels == i)
-    sizes.append(size)
+#Distance Transform
+dist_transform = cv2.distanceTransform(closing, cv2.DIST_L2, 5)
+_, sure_fg = cv2.threshold(dist_transform, 0.9 * dist_transform.max(), 255, 0)
+sure_fg = cv2.erode(sure_fg.astype(np.uint8), kernel, iterations=1)
+sure_bg = cv2.dilate(closing, kernel, iterations=3)
+unknown = cv2.subtract(sure_bg, sure_fg)
 
-#Find the largest component index, size[0] corresponds to label 1
-largest_component_index = np.argmax(sizes) + 1
+gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+sobel_x = cv2.Sobel(gray_img, cv2.CV_64F, 1, 0, ksize=3)
+sobel_y = cv2.Sobel(gray_img, cv2.CV_64F, 0, 1, ksize=3)
+gradient_magnitude = cv2.magnitude(sobel_x, sobel_y)
+gradient_magnitude = cv2.convertScaleAbs(gradient_magnitude)
 
-# Create a mask for the largest component
-largest_component_mask = np.zeros_like(closing)
-largest_component_mask[labels == largest_component_index] = 255
+#Marker labelling
+num_labels, markers = cv2.connectedComponents(sure_fg)
+markers = markers + 1
+markers[unknown == 255] = 0
+
+#Watershed
+markers = cv2.watershed(cv2.cvtColor(gradient_magnitude, cv2.COLOR_GRAY2BGR), markers)
+
+#Create a mask for the watershed result
+watershed_mask = np.zeros_like(closing)
+watershed_mask[markers > 1] = 255
+
+# #Measuring size of components
+# sizes = []
+# for i in range(1, num_labels):
+#     size = np.sum(labels == i)
+#     sizes.append(size)
+#
+# #Find the largest component index, size[0] corresponds to label 1
+# largest_component_index = np.argmax(sizes) + 1
+#
+# # Create a mask for the largest component
+# largest_component_mask = np.zeros_like(closing)
+# largest_component_mask[labels == largest_component_index] = 255
 
 img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
@@ -87,8 +112,8 @@ plt.title("Closing")
 plt.axis("off")
 
 plt.subplot(2,5,9)
-plt.imshow(largest_component_mask, cmap='gray')
-plt.title("Largest Component")
+plt.imshow(watershed_mask, cmap='gray')
+plt.title("Watershed Mask")
 plt.axis("off")
 
 plt.tight_layout()
