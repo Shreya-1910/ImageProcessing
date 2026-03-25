@@ -6,7 +6,7 @@ import glob
 # images = glob.glob("C:/Users/Navya/Downloads/Naturalize Dataset/*.jpg")
 #
 # for image_path in images:
-img = cv2.imread("ERB 2K-PBC Train (106).jpg")
+img = cv2.imread("ERB 2K-PBC Train (38).jpg")
 
 lab_img = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
 
@@ -15,6 +15,9 @@ l_channel, a_channel, b_channel = cv2.split(lab_img)
 
 # Apply Gaussian blur to the A channel
 blur_imgA = cv2.GaussianBlur(a_channel, (5, 5), 15)
+
+# Apply bilateral filter to the A channel
+blur_imgA = cv2.bilateralFilter(a_channel, 30, 250, 250)
 
 #Otsu's thresholding
 _, otsu_thresh = cv2.threshold(blur_imgA, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
@@ -30,6 +33,8 @@ close_size = max(15, int(min(h, w) * 0.04))  # Adjust close size based on image 
 close_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (close_size, close_size))
 closing = cv2.morphologyEx(opening, cv2.MORPH_CLOSE, close_kernel, iterations=4)#Connected components
 num_labels, labels = cv2.connectedComponents(closing)
+
+
 
 #Flood fill holes
 flood_filled = closing.copy()
@@ -54,6 +59,7 @@ sobel_x = cv2.Sobel(gray_img, cv2.CV_64F, 1, 0, ksize=5)
 sobel_y = cv2.Sobel(gray_img, cv2.CV_64F, 0, 1, ksize=5)
 gradient_magnitude = cv2.magnitude(sobel_x, sobel_y)
 gradient_magnitude = cv2.convertScaleAbs(gradient_magnitude)
+
 
 #Marker labelling
 num_labels, markers = cv2.connectedComponents(sure_fg)
@@ -103,7 +109,7 @@ extracted_img[watershed_mask_binary == 0] = [255, 255, 255]
 plt.figure(figsize=(12,8))
 
 plt.subplot(2,5,1)
-plt.imshow(img)
+plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
 plt.title("Original Image")
 plt.axis("off")
 
@@ -148,7 +154,7 @@ plt.title("Watershed Mask")
 plt.axis("off")
 
 plt.subplot(2,5,10)
-plt.imshow(extracted_img)
+plt.imshow(cv2.cvtColor(extracted_img, cv2.COLOR_BGR2RGB))
 plt.title("Extracted Image")
 plt.axis("off")
 
