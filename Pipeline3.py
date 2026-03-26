@@ -6,7 +6,33 @@ import glob
 # images = glob.glob("C:/Users/Navya/Downloads/Naturalize Dataset/*.jpg")
 #
 # for image_path in images:
-img = cv2.imread("ERB 2K-PBC Train (38).jpg")
+# img = cv2.imread("MMY 2K-PBC Train (403).jpg")
+# img = cv2.imread("MMY 2K-PBC Train (30).jpg")
+# img = cv2.imread("MMY 2K-PBC Train (1509).png")
+# img = cv2.imread("MMY 2K-PBC Train (26).png")
+# img = cv2.imread("MMY 2K-PBC Train (45).jpg")
+# img =cv2.imread("MMY 2K-PBC Train (19).jpg")
+# img = cv2.imread("MMY 2K-PBC Train (45).png")
+# img =cv2.imread("MMY 2K-PBC Train (119).jpg")
+#
+# img = cv2.imread("EO 2K-PBC Train (78).jpg")
+# img = cv2.imread("EO 2K-PBC Train (39).jpg")
+# img =cv2.imread("EO 2K-PBC Train (183).jpg")
+# img = cv2.imread("EO 2K-PBC Train (361).jpg")
+# img = cv2.imread("EO 2K-PBC Train (423).jpg")
+#
+# img = cv2.imread("ERB 2K-PBC Train (23).jpg")
+# img= cv2.imread("ERB 2K-PBC Train (38).jpg")
+# img= cv2.imread("ERB 2K-PBC Train (96).jpg")
+# img= cv2.imread("ERB 2K-PBC Train (98).jpg")
+# img= cv2.imread("ERB 2K-PBC Train (106).jpg")
+# img= cv2.imread("ERB 2K-PBC Train (126).jpg")
+# img= cv2.imread("ERB 2K-PBC Train (165).jpg")
+img= cv2.imread("ERB 2K-PBC Train (194).jpg")
+# img= cv2.imread("ERB 2K-PBC Train (254).jpg")
+# img= cv2.imread("ERB 2K-PBC Train (258).jpg")
+# img= cv2.imread("ERB 2K-PBC Train (294).jpg")
+# img= cv2.imread("ERB 2K-PBC Train (331).jpg")
 
 lab_img = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
 
@@ -16,8 +42,8 @@ l_channel, a_channel, b_channel = cv2.split(lab_img)
 # Apply Gaussian blur to the A channel
 blur_imgA = cv2.GaussianBlur(a_channel, (5, 5), 15)
 
-# Apply bilateral filter to the A channel
-blur_imgA = cv2.bilateralFilter(a_channel, 30, 250, 250)
+# # Apply bilateral filter to the A channel
+# blur_imgA = cv2.bilateralFilter(a_channel, 30, 250, 250)
 
 #Otsu's thresholding
 _, otsu_thresh = cv2.threshold(blur_imgA, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
@@ -25,13 +51,13 @@ _, otsu_thresh = cv2.threshold(blur_imgA, 0, 255, cv2.THRESH_BINARY + cv2.THRESH
 # Morphological operations
 #Opening
 kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-opening = cv2.morphologyEx(otsu_thresh, cv2.MORPH_OPEN, kernel)
+# opening = cv2.morphologyEx(otsu_thresh, cv2.MORPH_OPEN, kernel)
 
 #Closing
 h, w = img.shape[:2]
 close_size = max(15, int(min(h, w) * 0.04))  # Adjust close size based on image dimensions
 close_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (close_size, close_size))
-closing = cv2.morphologyEx(opening, cv2.MORPH_CLOSE, close_kernel, iterations=4)#Connected components
+closing = cv2.morphologyEx(otsu_thresh, cv2.MORPH_CLOSE, close_kernel, iterations=4)#Connected components
 num_labels, labels = cv2.connectedComponents(closing)
 
 
@@ -45,7 +71,7 @@ flood_fill_inverted = cv2.bitwise_not(flood_filled)
 closing = cv2.bitwise_or(closing, flood_fill_inverted)
 
 if cv2.countNonZero(closing) > 0.9 * closing.size:
-    closing = cv2.morphologyEx(opening, cv2.MORPH_CLOSE, kernel, iterations=4)
+    closing = cv2.morphologyEx(otsu_thresh, cv2.MORPH_CLOSE, kernel, iterations=4)
 
 #Distance Transform
 dist_transform = cv2.distanceTransform(closing, cv2.DIST_L2, 5)
@@ -138,25 +164,58 @@ plt.imshow(otsu_thresh, cmap='gray')
 plt.title("Otsu Threshold")
 plt.axis("off")
 
-plt.subplot(2,5,7)
-plt.imshow(opening, cmap='gray')
-plt.title("Opening")
-plt.axis("off")
+# plt.subplot(2,5,7)
+# plt.imshow(opening, cmap='gray')
+# plt.title("Opening")
+# plt.axis("off")
 
-plt.subplot(2,5,8)
+plt.subplot(2,5,7)
 plt.imshow(closing, cmap='gray')
 plt.title("Closing")
 plt.axis("off")
 
-plt.subplot(2,5,9)
+plt.subplot(2,5,8)
 plt.imshow(watershed_mask, cmap='gray')
 plt.title("Watershed Mask")
 plt.axis("off")
 
-plt.subplot(2,5,10)
+plt.subplot(2,5,9)
 plt.imshow(cv2.cvtColor(extracted_img, cv2.COLOR_BGR2RGB))
 plt.title("Extracted Image")
 plt.axis("off")
 
 plt.tight_layout()
 plt.show()
+
+
+def calculate_dice(mask1, mask2):
+    """Calculates the Dice score between two binary masks."""
+    # Ensure masks are binary (0 or 1)
+    mask1 = (mask1 > 0).astype(np.uint8)
+    mask2 = (mask2 > 0).astype(np.uint8)
+
+    # Calculate Intersection
+    intersection = np.sum(mask1 & mask2)
+
+    # Calculate Total Pixels
+    total_sum = np.sum(mask1) + np.sum(mask2)
+
+    # Avoid division by zero
+    if total_sum == 0:
+        return 1.0
+
+    # Dice Coefficient
+    return (2. * intersection) / total_sum
+
+
+# --- Example Usage ---
+# Load ground truth and predicted image (thresholded)
+true_mask = watershed_mask
+pred_mask = cv2.imread('ERB 2K-PBC Train (194)_mask.png', cv2.IMREAD_GRAYSCALE)
+
+# Threshold to ensure binary
+_, true_binary = cv2.threshold(true_mask, 127, 255, cv2.THRESH_BINARY)
+_, pred_binary = cv2.threshold(pred_mask, 127, 255, cv2.THRESH_BINARY)
+
+dice_score = calculate_dice(true_binary, pred_binary)
+print(f"Dice Score: {dice_score}")
