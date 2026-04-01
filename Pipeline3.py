@@ -3,36 +3,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import glob
 
-# images = glob.glob("C:/Users/Navya/Downloads/Naturalize Dataset/*.jpg")
-#
-# for image_path in images:
-# img = cv2.imread("MMY 2K-PBC Train (403).jpg")
-# img = cv2.imread("MMY 2K-PBC Train (30).jpg")
-# img = cv2.imread("MMY 2K-PBC Train (1509).png")
-# img = cv2.imread("MMY 2K-PBC Train (26).png")
-# img = cv2.imread("MMY 2K-PBC Train (45).jpg")
-# img =cv2.imread("MMY 2K-PBC Train (19).jpg")
-# img = cv2.imread("MMY 2K-PBC Train (45).png")
-# img =cv2.imread("MMY 2K-PBC Train (119).jpg")
-#
-# img = cv2.imread("EO 2K-PBC Train (78).jpg")
-# img = cv2.imread("EO 2K-PBC Train (39).jpg")
-# img =cv2.imread("EO 2K-PBC Train (183).jpg")
-# img = cv2.imread("EO 2K-PBC Train (361).jpg")
-# img = cv2.imread("EO 2K-PBC Train (423).jpg")
-#
-# img = cv2.imread("ERB 2K-PBC Train (23).jpg")
-# img= cv2.imread("ERB 2K-PBC Train (38).jpg")
-# img= cv2.imread("ERB 2K-PBC Train (96).jpg")
-# img= cv2.imread("ERB 2K-PBC Train (98).jpg")
-# img= cv2.imread("ERB 2K-PBC Train (106).jpg")
-# img= cv2.imread("ERB 2K-PBC Train (126).jpg")
-# img= cv2.imread("ERB 2K-PBC Train (165).jpg")
-img= cv2.imread("ERB 2K-PBC Train (194).jpg")
-# img= cv2.imread("ERB 2K-PBC Train (254).jpg")
-# img= cv2.imread("ERB 2K-PBC Train (258).jpg")
-# img= cv2.imread("ERB 2K-PBC Train (294).jpg")
-# img= cv2.imread("ERB 2K-PBC Train (331).jpg")
+
+img = cv2.imread("Images\MMY 2K-PBC Train (862).png")
+
+
 
 lab_img = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
 
@@ -211,7 +185,7 @@ def calculate_dice(mask1, mask2):
 # --- Example Usage ---
 # Load ground truth and predicted image (thresholded)
 true_mask = watershed_mask
-pred_mask = cv2.imread('ERB 2K-PBC Train (194)_mask.png', cv2.IMREAD_GRAYSCALE)
+pred_mask = cv2.imread('Ground Truth/MMY 2K-PBC Train (862)_mask.png', cv2.IMREAD_GRAYSCALE)
 
 # Threshold to ensure binary
 _, true_binary = cv2.threshold(true_mask, 127, 255, cv2.THRESH_BINARY)
