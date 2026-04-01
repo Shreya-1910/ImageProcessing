@@ -1,115 +1,172 @@
 import cv2
 import numpy as np
-import matplotlib.pyplot as plt
+import glob
+import os
 
-BLUR_KERNEL = (5, 5)
-DIST_THRESH = 0.2
-MIN_AREA = 500
+# Dataset folders
 
-img = cv2.imread("EO 2K-PBC Train (423).jpg")
-if img is None:
-    raise ValueError("Image not found. Check file path.")
+img_folder = r"C:\Users\Shrey\PycharmProjects\PythonProject\ERB"
+mask_folder = r"C:\Users\Shrey\PycharmProjects\PythonProject\ERBGroundtruth"
 
-img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-lab_img = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
-l_channel, a_channel, b_channel = cv2.split(lab_img)
+# Dice Score
+def calculate_dice(mask1, mask2):
+    mask1 = (mask1 > 0).astype(np.uint8)
+    mask2 = (mask2 > 0).astype(np.uint8)
 
-blur_imgA = cv2.GaussianBlur(a_channel, BLUR_KERNEL, 0)
+    intersection = np.sum(mask1 & mask2)
+    total_sum = np.sum(mask1) + np.sum(mask2)
 
-_, otsu_thresh = cv2.threshold(
-    blur_imgA, 0, 255,
-    cv2.THRESH_BINARY + cv2.THRESH_OTSU
-)
+    if total_sum == 0:
+        return 1.0
 
-h, w = otsu_thresh.shape
-kernel_open = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-opening = cv2.morphologyEx(otsu_thresh, cv2.MORPH_OPEN, kernel_open)
+    return (2.0 * intersection) / total_sum
 
-# Adaptive closing based on image size
-close_size = max(15, int(min(h, w) * 0.04))
-kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (close_size, close_size))
-closing = cv2.morphologyEx(opening, cv2.MORPH_CLOSE, kernel_close, iterations=3)
+# IoU Function
 
-flood = closing.copy()
-mask = np.zeros((h+2, w+2), np.uint8)
-cv2.floodFill(flood, mask, (0, 0), 255)
-flood_inv = cv2.bitwise_not(flood)
-closing = cv2.bitwise_or(closing, flood_inv)
+def calculate_iou(mask1, mask2):
+    mask1 = (mask1 > 0).astype(np.uint8)
+    mask2 = (mask2 > 0).astype(np.uint8)
 
-dist_transform = cv2.distanceTransform(closing, cv2.DIST_L2, 5)
-_, sure_fg = cv2.threshold(dist_transform, DIST_THRESH * dist_transform.max(), 255, 0)
-sure_fg = cv2.erode(np.uint8(sure_fg), kernel_open, iterations=1)
+    intersection = np.sum(mask1 & mask2)
+    union = np.sum(mask1 | mask2)
 
-sure_bg = cv2.dilate(closing, kernel_open, iterations=4)
-unknown = cv2.subtract(sure_bg, sure_fg)
+    if union == 0:
+        return 1.0
 
-gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-sobel_x = cv2.Sobel(gray_img, cv2.CV_64F, 1, 0, ksize=5)
-sobel_y = cv2.Sobel(gray_img, cv2.CV_64F, 0, 1, ksize=5)
-gradient = cv2.magnitude(sobel_x, sobel_y)
-gradient = cv2.convertScaleAbs(gradient)
-gradient = cv2.normalize(gradient, None, 0, 255, cv2.NORM_MINMAX)
+    return intersection / union
 
-num_labels, markers = cv2.connectedComponents(sure_fg)
-markers = markers + 1
-markers[unknown == 255] = 0
+dice_scores = []
+iou_scores = []
 
-# Watershed
-markers = cv2.watershed(cv2.cvtColor(gradient, cv2.COLOR_GRAY2BGR), markers)
+image_files = glob.glob(os.path.join(img_folder, "*.jpg"))
+print("Total images found:", len(image_files))
 
-best_score = -np.inf
-best_marker = None
-for label in range(2, markers.max()+1):
-    region_mask = np.uint8(markers == label)
-    area = cv2.countNonZero(region_mask)
-    if area < MIN_AREA:
+for img_path in image_files:
+
+    img_name = os.path.basename(img_path).replace(".jpg", "")
+    mask_path = os.path.join(mask_folder, img_name + "_mask.png")
+
+    img = cv2.imread(img_path)
+    gt_mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+
+    if img is None:
+        continue
+    if gt_mask is None:
+        print(f"{img_name}: no ground truth mask")
         continue
 
-    mean_a = cv2.mean(a_channel, mask=region_mask)[0]
-    mean_l = cv2.mean(l_channel, mask=region_mask)[0]
+    # Convert to LAB
+    lab_img = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+    l_channel, a_channel, b_channel = cv2.split(lab_img)
 
-    score = mean_a - 0.5 * mean_l  # high a-channel, moderate brightness
-    if score > best_score:
-        best_score = score
-        best_marker = label
+    blur_imgA = cv2.GaussianBlur(a_channel, (5, 5), 15)
 
-watershed_mask = np.zeros_like(closing)
-if best_marker is not None:
-    watershed_mask[markers == best_marker] = 255
+    # Otsu Threshold
+    _, otsu_thresh = cv2.threshold(
+        blur_imgA, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+    )
 
-# Keep only largest connected component
-contours, _ = cv2.findContours(watershed_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-if contours:
-    largest = max(contours, key=cv2.contourArea)
-    watershed_mask = np.zeros_like(watershed_mask)
-    cv2.drawContours(watershed_mask, [largest], -1, 255, -1)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
 
-final_mask = np.uint8(watershed_mask > 0) * 255
+    h, w = img.shape[:2]
+    close_size = max(15, int(min(h, w) * 0.04))
+    close_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (close_size, close_size))
 
-extracted_img = cv2.bitwise_and(img_rgb, img_rgb, mask=final_mask)
-extracted_img[final_mask == 0] = [255, 255, 255]
+    closing = cv2.morphologyEx(otsu_thresh, cv2.MORPH_CLOSE, close_kernel, iterations=4)
 
-plt.figure(figsize=(12,8))
-titles = [
-    "Original", "L Channel", "A Channel", "Blur",
-    "Otsu", "Opening", "Closing", "Distance FG",
-    "Watershed Mask", "Final Extraction"
-]
-images = [
-    img_rgb, l_channel, a_channel, blur_imgA,
-    otsu_thresh, opening, closing, sure_fg,
-    watershed_mask, extracted_img
-]
+    # Flood fill holes
+    flood_filled = closing.copy()
+    fill_mask = np.zeros((h + 2, w + 2), np.uint8)
+    cv2.floodFill(flood_filled, fill_mask, (0, 0), 255)
+    flood_fill_inverted = cv2.bitwise_not(flood_filled)
+    closing = cv2.bitwise_or(closing, flood_fill_inverted)
 
-for i in range(len(images)):
-    plt.subplot(2,5,i+1)
-    if images[i].ndim == 2:
-        plt.imshow(images[i], cmap='gray')
-    else:
-        plt.imshow(images[i])
-    plt.title(titles[i])
-    plt.axis("off")
+    if cv2.countNonZero(closing) > 0.9 * closing.size:
+        closing = cv2.morphologyEx(otsu_thresh, cv2.MORPH_CLOSE, kernel, iterations=4)
 
-plt.tight_layout()
-plt.show()
+    # Distance transform
+    dist_transform = cv2.distanceTransform(closing, cv2.DIST_L2, 5)
+    _, sure_fg = cv2.threshold(dist_transform, 0.2 * dist_transform.max(), 255, 0)
+    sure_fg = cv2.erode(sure_fg.astype(np.uint8), kernel, iterations=1)
+    sure_bg = cv2.dilate(closing, kernel, iterations=4)
+    unknown = cv2.subtract(sure_bg, sure_fg)
+
+    # Gradient magnitude
+    gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    sobel_x = cv2.Sobel(gray_img, cv2.CV_64F, 1, 0, ksize=5)
+    sobel_y = cv2.Sobel(gray_img, cv2.CV_64F, 0, 1, ksize=5)
+    gradient_magnitude = cv2.magnitude(sobel_x, sobel_y)
+    gradient_magnitude = cv2.convertScaleAbs(gradient_magnitude)
+
+    # Marker labelling
+    num_labels, markers = cv2.connectedComponents(sure_fg)
+    markers = markers + 1
+    markers[unknown == 255] = 0
+
+    # Watershed segmentation
+    markers = cv2.watershed(cv2.cvtColor(gradient_magnitude, cv2.COLOR_GRAY2BGR), markers)
+
+    best_score = -np.inf
+    pmy_marker = -1
+
+    # Choose best segment
+    for label in range(2, markers.max() + 1):
+        region_mask = np.uint8(markers == label)
+        area = cv2.countNonZero(region_mask)
+        if area < 500:
+            continue
+
+        mean_a = cv2.mean(a_channel, mask=region_mask)[0]
+        mean_l = cv2.mean(l_channel, mask=region_mask)[0]
+        score = mean_a - 0.5 * mean_l
+
+        if score > best_score:
+            best_score = score
+            pmy_marker = label
+
+    watershed_mask = np.zeros_like(closing)
+    if pmy_marker != -1:
+        watershed_mask[markers == pmy_marker] = 255
+
+    # Keep largest component
+    contours, _ = cv2.findContours(watershed_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if contours:
+        largest = max(contours, key=cv2.contourArea)
+        watershed_mask = np.zeros_like(watershed_mask)
+        cv2.drawContours(watershed_mask, [largest], -1, 255, thickness=cv2.FILLED)
+
+    watershed_mask_binary = (np.uint8(watershed_mask > 0) * 255)
+
+    # Threshold
+    _, pred_bin = cv2.threshold(watershed_mask_binary, 127, 255, cv2.THRESH_BINARY)
+    _, gt_bin = cv2.threshold(gt_mask, 127, 255, cv2.THRESH_BINARY)
+
+    # Dice & IoU
+    dice = calculate_dice(pred_bin, gt_bin)
+    iou = calculate_iou(pred_bin, gt_bin)
+
+    dice_scores.append((img_name, dice))
+    iou_scores.append((img_name, iou))
+
+    print(f"{img_name}: Dice={dice:.4f}, IoU={iou:.4f}")
+
+# Final Results
+if dice_scores:
+
+    avg_dice = np.mean([score for _, score in dice_scores])
+    avg_iou = np.mean([score for _, score in iou_scores])
+
+    print("\nAverage Dice Score:", avg_dice)
+    print("Average IoU Score:", avg_iou)
+
+    sorted_dice = sorted(dice_scores, key=lambda x: x[1], reverse=True)
+    sorted_iou = sorted(iou_scores, key=lambda x: x[1], reverse=True)
+
+    print("\nTop 3 Dice Scores:")
+    for name, score in sorted_dice[:3]:
+        print(f"{name}: {score:.4f}")
+
+    print("\nTop 3 IoU Scores:")
+    for name, score in sorted_iou[:3]:
+        print(f"{name}: {score:.4f}")
