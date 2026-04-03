@@ -2,48 +2,84 @@ import cv2
 import numpy as np
 import glob
 import os
+from scipy.spatial.distance import directed_hausdorff
 
 # Dataset folders
-
 img_folder = r"C:\Users\Shrey\PycharmProjects\PythonProject\ERB"
 mask_folder = r"C:\Users\Shrey\PycharmProjects\PythonProject\ERBGroundtruth"
-
 
 # Dice Score
 def calculate_dice(mask1, mask2):
     mask1 = (mask1 > 0).astype(np.uint8)
     mask2 = (mask2 > 0).astype(np.uint8)
-
     intersection = np.sum(mask1 & mask2)
     total_sum = np.sum(mask1) + np.sum(mask2)
-
     if total_sum == 0:
         return 1.0
-
     return (2.0 * intersection) / total_sum
 
 # IoU Function
-
 def calculate_iou(mask1, mask2):
     mask1 = (mask1 > 0).astype(np.uint8)
     mask2 = (mask2 > 0).astype(np.uint8)
-
     intersection = np.sum(mask1 & mask2)
     union = np.sum(mask1 | mask2)
-
     if union == 0:
         return 1.0
-
     return intersection / union
 
-dice_scores = []
-iou_scores = []
+# Hausdorff Distance
+def calculate_hausdorff(mask1, mask2):
+    mask1 = (mask1 > 0).astype(np.uint8)
+    mask2 = (mask2 > 0).astype(np.uint8)
+    pts1 = np.column_stack(np.where(mask1 > 0))
+    pts2 = np.column_stack(np.where(mask2 > 0))
+    if len(pts1) == 0 or len(pts2) == 0:
+        return np.nan
+    d1 = directed_hausdorff(pts1, pts2)[0]
+    d2 = directed_hausdorff(pts2, pts1)[0]
+    return max(d1, d2)
+
+# Precision
+def calculate_precision(mask1, mask2):
+    mask1 = (mask1 > 0).astype(np.uint8)
+    mask2 = (mask2 > 0).astype(np.uint8)
+    tp = np.sum(mask1 & mask2)
+    fp = np.sum(mask1 & (~mask2))
+    if tp + fp == 0:
+        return 1.0
+    return tp / (tp + fp)
+
+# Recall
+def calculate_recall(mask1, mask2):
+    mask1 = (mask1 > 0).astype(np.uint8)
+    mask2 = (mask2 > 0).astype(np.uint8)
+    tp = np.sum(mask1 & mask2)
+    fn = np.sum((~mask1) & mask2)
+    if tp + fn == 0:
+        return 1.0
+    return tp / (tp + fn)
+
+# Cell Count Accuracy
+def calculate_cell_count_accuracy(pred_mask, gt_mask):
+    # Count number of connected components (cells)
+    num_pred, _ = cv2.connectedComponents((pred_mask > 0).astype(np.uint8))
+    num_gt, _ = cv2.connectedComponents((gt_mask > 0).astype(np.uint8))
+    # Subtract background component
+    num_pred -= 1
+    num_gt -= 1
+    if num_gt == 0:
+        return 1.0 if num_pred == 0 else 0.0
+    return 1 - abs(num_pred - num_gt) / num_gt
+
+# Store metrics
+dice_scores, iou_scores, hausdorff_scores = [], [], []
+precision_scores, recall_scores, cellcount_scores = [], [], []
 
 image_files = glob.glob(os.path.join(img_folder, "*.jpg"))
 print("Total images found:", len(image_files))
 
 for img_path in image_files:
-
     img_name = os.path.basename(img_path).replace(".jpg", "")
     mask_path = os.path.join(mask_folder, img_name + "_mask.png")
 
@@ -68,11 +104,9 @@ for img_path in image_files:
     )
 
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-
     h, w = img.shape[:2]
     close_size = max(15, int(min(h, w) * 0.04))
     close_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (close_size, close_size))
-
     closing = cv2.morphologyEx(otsu_thresh, cv2.MORPH_CLOSE, close_kernel, iterations=4)
 
     # Flood fill holes
@@ -116,11 +150,9 @@ for img_path in image_files:
         area = cv2.countNonZero(region_mask)
         if area < 500:
             continue
-
         mean_a = cv2.mean(a_channel, mask=region_mask)[0]
         mean_l = cv2.mean(l_channel, mask=region_mask)[0]
         score = mean_a - 0.5 * mean_l
-
         if score > best_score:
             best_score = score
             pmy_marker = label
@@ -142,31 +174,36 @@ for img_path in image_files:
     _, pred_bin = cv2.threshold(watershed_mask_binary, 127, 255, cv2.THRESH_BINARY)
     _, gt_bin = cv2.threshold(gt_mask, 127, 255, cv2.THRESH_BINARY)
 
-    # Dice & IoU
+    # Metrics
     dice = calculate_dice(pred_bin, gt_bin)
     iou = calculate_iou(pred_bin, gt_bin)
+    hausdorff = calculate_hausdorff(pred_bin, gt_bin)
+    precision = calculate_precision(pred_bin, gt_bin)
+    recall = calculate_recall(pred_bin, gt_bin)
+    cellcount_acc = calculate_cell_count_accuracy(pred_bin, gt_bin)
 
     dice_scores.append((img_name, dice))
     iou_scores.append((img_name, iou))
+    hausdorff_scores.append((img_name, hausdorff))
+    precision_scores.append((img_name, precision))
+    recall_scores.append((img_name, recall))
+    cellcount_scores.append((img_name, cellcount_acc))
 
-    print(f"{img_name}: Dice={dice:.4f}, IoU={iou:.4f}")
+    print(f"{img_name}: Dice={dice:.4f}, IoU={iou:.4f}, Hausdorff={hausdorff:.4f}, "
+          f"Precision={precision:.4f}, Recall={recall:.4f}, CellCountAcc={cellcount_acc:.4f}")
 
 # Final Results
-if dice_scores:
-
-    avg_dice = np.mean([score for _, score in dice_scores])
-    avg_iou = np.mean([score for _, score in iou_scores])
-
-    print("\nAverage Dice Score:", avg_dice)
-    print("Average IoU Score:", avg_iou)
-
-    sorted_dice = sorted(dice_scores, key=lambda x: x[1], reverse=True)
-    sorted_iou = sorted(iou_scores, key=lambda x: x[1], reverse=True)
-
-    print("\nTop 3 Dice Scores:")
-    for name, score in sorted_dice[:3]:
+def print_avg_and_top3(scores, metric_name, reverse=True):
+    avg_score = np.nanmean([score for _, score in scores])
+    print(f"\nAverage {metric_name}: {avg_score:.4f}")
+    sorted_scores = sorted(scores, key=lambda x: x[1], reverse=reverse)
+    print(f"Top 3 {metric_name}:")
+    for name, score in sorted_scores[:3]:
         print(f"{name}: {score:.4f}")
 
-    print("\nTop 3 IoU Scores:")
-    for name, score in sorted_iou[:3]:
-        print(f"{name}: {score:.4f}")
+print_avg_and_top3(dice_scores, "Dice Score")
+print_avg_and_top3(iou_scores, "IoU Score")
+print_avg_and_top3(precision_scores, "Precision")
+print_avg_and_top3(recall_scores, "Recall")
+print_avg_and_top3(cellcount_scores, "Cell Count Accuracy")
+print_avg_and_top3(hausdorff_scores, "Hausdorff Distance", reverse=False)
