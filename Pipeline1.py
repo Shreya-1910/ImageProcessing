@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 
-img = cv2.imread('ERB 2K-PBC Train (23).jpg')
+img = cv2.imread('Other Images/ERB 2K-PBC Train (23).jpg')
 
 lab_img = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
 

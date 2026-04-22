@@ -6,7 +6,7 @@ import glob
 # images = glob.glob("C:/Users/Navya/Downloads/Naturalize Dataset/*.jpg")
 #
 # for image_path in images:
-img = cv2.imread("MMY 2K-PBC Train (26).png")
+img = cv2.imread("Other Images/MMY 2K-PBC Train (26).png")
 
 lab_img = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
 
